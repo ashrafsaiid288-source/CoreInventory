@@ -1,300 +1,254 @@
 /**
- * Dashboard View Controller
+ * Dashboard View Controller (Arabic 100%)
  */
 
-window.dashboardController = {
-    chartInstance: null,
+async function renderDashboard() {
+    const container = document.getElementById('view-dashboard');
+    if (!container) return;
 
-    init: async function(container) {
+    if (typeof showLoader === 'function') showLoader();
+
+    try {
+        // Fetch operations and stats from Firestore
+        const [receiptsSnap, deliveriesSnap, movesSnap] = await Promise.all([
+            db.collection('receipts').get(),
+            db.collection('deliveries').get(),
+            db.collection('move_history').orderBy('timestamp', 'desc').limit(10).get()
+        ]);
+
+        const receipts = receiptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const deliveries = deliveriesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const recentMoves = movesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // حساب الإحصائيات
+        const rLate = receipts.filter(r => r.status === 'draft' || r.status === 'waiting').length;
+        const rWaiting = receipts.filter(r => r.status === 'ready').length;
+        const rTotal = receipts.length;
+
+        const dLate = deliveries.filter(d => d.status === 'draft' || d.status === 'waiting').length;
+        const dWaiting = deliveries.filter(d => d.status === 'ready').length;
+        const dTotal = deliveries.length;
+
         container.innerHTML = `
-            <div class="view-header">
-                <div class="view-header-left">
-                    <h2 class="view-title">Dashboard</h2>
-                </div>
+            <div class="page-header" style="margin-bottom: 1.5rem;">
+                <h2 style="font-weight: 700;">لوحة التحكم</h2>
             </div>
-            
-            <div class="dashboard-grid">
-                <!-- Receipts Card -->
-                <div class="summary-card" id="card-receipts">
-                    <h3>Receipt</h3>
-                    <div class="huge-number" id="dash-receipt-pending">0</div>
-                    <div class="stat-line">
-                        <span>Late</span>
-                        <span id="dash-receipt-late" class="text-error">0</span>
-                    </div>
-                    <div class="stat-line">
-                        <span>Total Operations</span>
-                        <span id="dash-receipt-total">0</span>
+
+            <!-- كروت الإحصائيات الرئيسية -->
+            <div class="kpi-grid">
+                <div class="kpi-card" onclick="navigateTo('receipts')" style="cursor: pointer;">
+                    <div class="kpi-title" style="font-weight: 600;">أذون الاستلام (الوارد)</div>
+                    <div class="kpi-main-stat" style="font-size: 2.5rem; font-weight: bold; margin: 10px 0;">${rTotal}</div>
+                    <div class="kpi-details">
+                        <div class="kpi-row" style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                            <span>متأخر</span>
+                            <span class="val text-danger" style="font-weight: bold; color: #dc3545;">${rLate}</span>
+                        </div>
+                        <div class="kpi-row" style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                            <span>قيد الانتظار</span>
+                            <span class="val text-warning" style="font-weight: bold; color: #ffc107;">${rWaiting}</span>
+                        </div>
+                        <div class="kpi-row" style="display:flex; justify-content:space-between;">
+                            <span>إجمالي العمليات</span>
+                            <span class="val" style="font-weight: bold;">${rTotal}</span>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Deliveries Card -->
-                <div class="summary-card" id="card-deliveries">
-                    <h3>Delivery</h3>
-                    <div class="huge-number" id="dash-delivery-pending">0</div>
-                    <div class="stat-line">
-                        <span>Late</span>
-                        <span id="dash-delivery-late" class="text-error">0</span>
-                    </div>
-                    <div class="stat-line">
-                        <span>Waiting</span>
-                        <span id="dash-delivery-waiting">0</span>
-                    </div>
-                    <div class="stat-line">
-                        <span>Total Operations</span>
-                        <span id="dash-delivery-total">0</span>
+                <div class="kpi-card" onclick="navigateTo('deliveries')" style="cursor: pointer;">
+                    <div class="kpi-title" style="font-weight: 600;">أذون الصرف (المنصرف)</div>
+                    <div class="kpi-main-stat" style="font-size: 2.5rem; font-weight: bold; margin: 10px 0;">${dTotal}</div>
+                    <div class="kpi-details">
+                        <div class="kpi-row" style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                            <span>متأخر</span>
+                            <span class="val text-danger" style="font-weight: bold; color: #dc3545;">${dLate}</span>
+                        </div>
+                        <div class="kpi-row" style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                            <span>قيد الانتظار</span>
+                            <span class="val text-warning" style="font-weight: bold; color: #ffc107;">${dWaiting}</span>
+                        </div>
+                        <div class="kpi-row" style="display:flex; justify-content:space-between;">
+                            <span>إجمالي العمليات</span>
+                            <span class="val" style="font-weight: bold;">${dTotal}</span>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div class="table-container" style="margin-top: 1.5rem;">
-                <div style="padding: 1rem; border-bottom: 1px solid var(--border); font-weight: 600;">
-                    Recent Activity (Last 10)
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Reference</th>
-                            <th>Type</th>
-                            <th>Contact</th>
-                            <th>From</th>
-                            <th>To</th>
-                            <th>Quantity</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="dash-activity-tbody">
-                        <tr><td colspan="7" class="text-center text-muted">Loading activity...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Analytics Chart -->
-            <div class="table-container dash-chart-container" style="margin-top: 1.5rem; padding: 1.5rem;">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-                    <span style="font-weight: 600; font-size: 1rem;">📊 Stock Movement Analytics</span>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <button class="btn btn-secondary chart-filter-btn active" data-type="all">All</button>
-                        <button class="btn btn-secondary chart-filter-btn" data-type="Receipt">Receipts</button>
-                        <button class="btn btn-secondary chart-filter-btn" data-type="Delivery">Deliveries</button>
-                        <button class="btn btn-secondary chart-filter-btn" data-type="Transfer">Transfers</button>
+            <!-- جدول العمليات الأخيرة -->
+            <div class="card mt-4" style="background:#fff; border-radius:8px; border:1px solid #e5e7eb; margin-top:1.5rem;">
+                <div class="card-header d-flex justify-between align-center" style="padding: 1rem 1.25rem; border-bottom:1px solid #e5e7eb; display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="font-size: 1.1rem; font-weight: 600; margin:0;">أحدث الحركات والعمليات (آخر 10)</h3>
+                    <div class="table-filters" style="display:flex; gap:6px;">
+                        <button class="btn btn-sm btn-secondary active" onclick="filterDashboardMoves('all', this)">الكل</button>
+                        <button class="btn btn-sm btn-secondary" onclick="filterDashboardMoves('receipt', this)">الوارد</button>
+                        <button class="btn btn-sm btn-secondary" onclick="filterDashboardMoves('delivery', this)">المنصرف</button>
+                        <button class="btn btn-sm btn-secondary" onclick="filterDashboardMoves('transfer', this)">التحويلات</button>
                     </div>
                 </div>
-                <div style="position: relative; height: 280px;">
-                    <canvas id="dash-chart"></canvas>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table" id="dashboard-recent-table" style="width:100%; border-collapse:collapse; text-align:right;">
+                            <thead>
+                                <tr style="background:#f9fafb; border-bottom:1px solid #e5e7eb;">
+                                    <th style="padding:10px 14px;">رقم المرجع / الإذن</th>
+                                    <th style="padding:10px 14px;">نوع العملية</th>
+                                    <th style="padding:10px 14px;">العميل / المورد</th>
+                                    <th style="padding:10px 14px;">من</th>
+                                    <th style="padding:10px 14px;">إلى</th>
+                                    <th style="padding:10px 14px;">الكمية</th>
+                                    <th style="padding:10px 14px;">الحالة</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${recentMoves.length === 0 ? `
+                                    <tr>
+                                        <td colspan="7" class="text-center py-4" style="text-align:center; padding:20px; color:#6b7280;">لا توجد حركات مسجلة حالياً</td>
+                                    </tr>
+                                ` : recentMoves.map(m => `
+                                    <tr class="move-row type-${m.type || 'unknown'}" style="border-bottom:1px solid #f3f4f6;">
+                                        <td style="padding:10px 14px;"><strong>${m.reference || '-'}</strong></td>
+                                        <td style="padding:10px 14px;">${translateMoveType(m.type)}</td>
+                                        <td style="padding:10px 14px;">${m.contact || '-'}</td>
+                                        <td style="padding:10px 14px;">${translateLocation(m.fromLocation || m.from)}</td>
+                                        <td style="padding:10px 14px;">${translateLocation(m.toLocation || m.to)}</td>
+                                        <td style="padding:10px 14px;">
+                                            <span style="font-weight:bold; color: ${m.quantity > 0 ? '#10b981' : '#ef4444'};">
+                                                ${m.quantity || 0}
+                                            </span>
+                                        </td>
+                                        <td style="padding:10px 14px;">
+                                            <span class="badge ${getStatusBadgeClass(m.status)}" style="padding:4px 8px; border-radius:4px; font-size:0.85rem;">
+                                                ${translateStatus(m.status)}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-                <p style="text-align: center; font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">
-                    Last 30 days of stock movement activity
-                </p>
+            </div>
+
+            <!-- قسم الرسم البياني -->
+            <div class="card mt-4" style="background:#fff; border-radius:8px; border:1px solid #e5e7eb; margin-top:1.5rem; padding:1.25rem;">
+                <div class="card-header" style="margin-bottom:1rem;">
+                    <h3 style="font-size: 1.1rem; font-weight: 600; margin:0;">📊 تحليلات حركة المخزون</h3>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="position: relative; height:300px;">
+                        <canvas id="dashboardChart"></canvas>
+                    </div>
+                </div>
             </div>
         `;
 
-        this.attachListeners();
-        this.fetchData();
-    },
-
-    attachListeners: function() {
-        document.getElementById('card-receipts').addEventListener('click', () => window.appRouter.loadRoute('receipts'));
-        document.getElementById('card-deliveries').addEventListener('click', () => window.appRouter.loadRoute('deliveries'));
-    },
-
-    fetchData: async function() {
-        if (!window.fbDb) return;
-        
-        try {
-            // Fetch Receipts stats
-            const recSnap = await window.fbDb.collection('receipts').get();
-            let recPending = 0, recLate = 0;
-            const todayStr = new Date().toISOString().split('T')[0];
-            
-            recSnap.forEach(doc => {
-                const data = doc.data();
-                if (data.status === 'Draft' || data.status === 'Ready') {
-                    recPending++;
-                    if (data.scheduleDate && data.scheduleDate < todayStr) recLate++;
-                }
-            });
-            
-            document.getElementById('dash-receipt-pending').textContent = recPending;
-            document.getElementById('dash-receipt-late').textContent = recLate;
-            document.getElementById('dash-receipt-total').textContent = recSnap.size;
-
-            // Fetch Deliveries stats
-            const delSnap = await window.fbDb.collection('deliveries').get();
-            let delPending = 0, delLate = 0, delWaiting = 0;
-            
-            delSnap.forEach(doc => {
-                const data = doc.data();
-                if (['Draft', 'Waiting', 'Ready'].includes(data.status)) {
-                    delPending++;
-                    if (data.scheduleDate && data.scheduleDate < todayStr) delLate++;
-                    if (data.status === 'Waiting') delWaiting++;
-                }
-            });
-            
-            document.getElementById('dash-delivery-pending').textContent = delPending;
-            document.getElementById('dash-delivery-late').textContent = delLate;
-            document.getElementById('dash-delivery-waiting').textContent = delWaiting;
-            document.getElementById('dash-delivery-total').textContent = delSnap.size;
-
-            // Fetch Recent Ledger Activity
-            const ledgerSnap = await window.fbDb.collection('ledger')
-                .orderBy('timestamp', 'desc')
-                .limit(10)
-                .get();
-                
-            const tbody = document.getElementById('dash-activity-tbody');
-            tbody.innerHTML = '';
-            
-            if (ledgerSnap.empty) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No recent activity</td></tr>';
-            } else {
-                ledgerSnap.forEach(doc => {
-                    const data = doc.data();
-                    const tr = document.createElement('tr');
-                    
-                    if (data.qtyChange > 0) tr.classList.add('row-in');
-                    else if (data.qtyChange < 0) tr.classList.add('row-out');
-                    
-                    const qtyStr = data.qtyChange > 0 ? `+${data.qtyChange}` : data.qtyChange.toString();
-                    
-                    tr.innerHTML = `
-                        <td class="font-weight-600">${data.reference}</td>
-                        <td>${data.type}</td>
-                        <td>${data.contact || '-'}</td>
-                        <td>${data.from || '-'}</td>
-                        <td>${data.to || '-'}</td>
-                        <td>${qtyStr}</td>
-                        <td><span class="badge badge-${data.status.toLowerCase()}">${data.status}</span></td>
-                    `;
-                    tbody.appendChild(tr);
-                });
-            }
-
-            // Build Chart from ALL ledger entries (last 30 days)
-            this.buildChart(null);
-
-            // Wire filter buttons
-            document.querySelectorAll('.chart-filter-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    document.querySelectorAll('.chart-filter-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    const type = btn.dataset.type === 'all' ? null : btn.dataset.type;
-                    this.buildChart(type);
-                });
-            });
-
-        } catch (error) {
-            console.error("Dashboard fetch error:", error);
-            utils.showToast("Error loading dashboard data", "error");
+        if (typeof initDashboardChart === 'function') {
+            initDashboardChart(receipts, deliveries);
         }
-    },
 
-    buildChart: async function(filterType) {
-        if (!window.fbDb) return;
-        try {
-            // Get all ledger entries
-            let query = window.fbDb.collection('ledger').orderBy('timestamp', 'desc').limit(200);
-            const snap = await query.get();
+    } catch (err) {
+        console.error('Error rendering dashboard:', err);
+        if (typeof showToast === 'function') showToast('حدث خطأ أثناء تحميل لوحة التحكم', 'error');
+    } finally {
+        if (typeof hideLoader === 'function') hideLoader();
+    }
+}
 
-            // Group by date (last 30 days)
-            const today = new Date();
-            const dateMap = {};
-            for (let i = 29; i >= 0; i--) {
-                const d = new Date(today);
-                d.setDate(today.getDate() - i);
-                const key = d.toISOString().split('T')[0];
-                dateMap[key] = { in: 0, out: 0 };
-            }
+// ترجمة نوع العملية
+function translateMoveType(type) {
+    switch (type) {
+        case 'receipt': return '<span style="color:#10b981; font-weight:600;">إذن استلام (وارد)</span>';
+        case 'delivery': return '<span style="color:#ef4444; font-weight:600;">إذن صرف (منصرف)</span>';
+        case 'transfer': return '<span style="color:#3b82f6; font-weight:600;">تحويل داخلي</span>';
+        case 'adjustment': return '<span style="color:#f59e0b; font-weight:600;">تسوية مخزنية</span>';
+        default: return type || '-';
+    }
+}
 
-            snap.forEach(doc => {
-                const data = doc.data();
-                if (filterType && data.type !== filterType) return;
-                let dateKey = null;
-                if (data.timestamp && data.timestamp.toDate) {
-                    dateKey = data.timestamp.toDate().toISOString().split('T')[0];
-                }
-                if (dateKey && dateMap[dateKey] !== undefined) {
-                    if (data.qtyChange > 0) dateMap[dateKey].in += data.qtyChange;
-                    else dateMap[dateKey].out += Math.abs(data.qtyChange);
-                }
-            });
+// ترجمة الأماكن والمستودعات الشائعة
+function translateLocation(loc) {
+    if (!loc) return '-';
+    if (loc === 'Main Warehouse') return 'المستودع الرئيسي';
+    if (loc === 'BuildCo HQ') return 'مقر شركة بيلدكو';
+    if (loc === 'Acme Corp') return 'شركة أكمي';
+    return loc;
+}
 
-            const labels = Object.keys(dateMap).map(d => {
-                const dt = new Date(d);
-                return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
-            });
-            const inData = Object.values(dateMap).map(v => v.in);
-            const outData = Object.values(dateMap).map(v => v.out);
+// ترجمة الحالات
+function translateStatus(status) {
+    switch (status) {
+        case 'draft': return 'مسودة';
+        case 'waiting': return 'قيد الانتظار';
+        case 'ready': return 'جاهز';
+        case 'done': return 'مكتمل';
+        case 'cancelled': return 'ملغي';
+        default: return status || 'مكتمل';
+    }
+}
 
-            const canvas = document.getElementById('dash-chart');
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
+function getStatusBadgeClass(status) {
+    switch (status) {
+        case 'done': return 'badge-success';
+        case 'ready': return 'badge-primary';
+        case 'waiting': return 'badge-warning';
+        case 'draft': return 'badge-secondary';
+        case 'cancelled': return 'badge-danger';
+        default: return 'badge-success';
+    }
+}
 
-            // Destroy previous instance
-            if (this.chartInstance) {
-                this.chartInstance.destroy();
-                this.chartInstance = null;
-            }
+function filterDashboardMoves(type, btn) {
+    const buttons = btn.parentElement.querySelectorAll('button');
+    buttons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
 
-            const isDark = document.body.classList.contains('dark-mode');
-            const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)';
-            const tickColor = isDark ? '#9CA3AF' : '#6B7280';
+    const rows = document.querySelectorAll('#dashboard-recent-table tbody tr.move-row');
+    rows.forEach(r => {
+        if (type === 'all' || r.classList.contains(`type-${type}`)) {
+            r.style.display = '';
+        } else {
+            r.style.display = 'none';
+        }
+    });
+}
 
-            this.chartInstance = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels,
-                    datasets: [
-                        {
-                            label: 'Stock In',
-                            data: inData,
-                            backgroundColor: 'rgba(16, 185, 129, 0.7)',
-                            borderColor: 'rgba(16, 185, 129, 1)',
-                            borderWidth: 1.5,
-                            borderRadius: 4,
-                        },
-                        {
-                            label: 'Stock Out',
-                            data: outData,
-                            backgroundColor: 'rgba(239, 68, 68, 0.65)',
-                            borderColor: 'rgba(239, 68, 68, 1)',
-                            borderWidth: 1.5,
-                            borderRadius: 4,
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
-                    plugins: {
-                        legend: {
-                            labels: { color: tickColor, font: { family: 'Inter', size: 12 } }
-                        },
-                        tooltip: {
-                            backgroundColor: isDark ? '#1F2937' : '#fff',
-                            titleColor: isDark ? '#F9FAFB' : '#111827',
-                            bodyColor: isDark ? '#9CA3AF' : '#6B7280',
-                            borderColor: isDark ? '#374151' : '#E5E7EB',
-                            borderWidth: 1,
-                        }
-                    },
-                    scales: {
-                        x: {
-                            grid: { color: gridColor },
-                            ticks: { color: tickColor, font: { family: 'Inter', size: 10 }, maxRotation: 45 }
-                        },
-                        y: {
-                            beginAtZero: true,
-                            grid: { color: gridColor },
-                            ticks: { color: tickColor, font: { family: 'Inter', size: 11 }, precision: 0 }
-                        }
+function initDashboardChart(receipts, deliveries) {
+    const ctx = document.getElementById('dashboardChart');
+    if (!ctx) return;
+
+    if (window.myDashboardChart) {
+        window.myDashboardChart.destroy();
+    }
+
+    window.myDashboardChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['أذون الاستلام (الوارد)', 'أذون الصرف (المنصرف)'],
+            datasets: [{
+                label: 'إجمالي العمليات المسجلة',
+                data: [receipts.length, deliveries.length],
+                backgroundColor: ['#10B981', '#EF4444'],
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        font: { family: 'Cairo' }
                     }
                 }
-            });
-        } catch(e) {
-            console.error('Chart build error', e);
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: { precision: 0 }
+                }
+            }
         }
-    }
-};
+    });
+}
